@@ -1,0 +1,67 @@
+name: Test
+
+on:
+    push:
+        branches: ["**"]
+    pull_request:
+
+jobs:
+    backend-tests:
+        runs-on: ubuntu-latest
+        needs: []
+        services:
+            postgres:
+                image: postgres:16-alpine
+                env:
+                    POSTGRES_USER: user
+                    POSTGRES_PASSWORD: password
+                    POSTGRES_DB: ragdb
+                ports: ["5432:5432"]
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+
+            redis:
+                image: redis:7-alpine
+                ports: ["6379:6379"]
+                options: >-
+                    --health-cmd "redis-cli ping"
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Install dependencies
+              run: |
+                  pip install -r backend/requirements.txt
+                  pip install pytest pytest-asyncio pytest-cov httpx
+
+            - name: Run tests
+              working-directory: backend
+              env:
+                  POSTGRES_URL: postgresql+asyncpg://user:password@localhost:5432/ragdb
+                  REDIS_URL: redis://localhost:6379
+                  RABBITMQ_URL: amqp://user:password@localhost:5672/
+                  JWT_SECRET_KEY: ci-test-secret-key
+                  OLLAMA_BASE_URL: http://localhost:11434
+                  MODEL_NAME: llama3.1:8b
+                  VISION_MODEL: llava:13b
+                  EMBEDDING_MODEL: sentence-transformers/all-MiniLM-L6-v2
+                  CLIP_MODEL: openai/clip-vit-base-patch32
+                  QDRANT_HOST: localhost
+                  QDRANT_PORT: 6333
+                  QDRANT_COLLECTION: test_collection
+              run: pytest tests/ -v --cov=. --cov-report=xml --cov-fail-under=60
+
+            - name: Upload coverage
+              uses: codecov/codecov-action@v4
+              with:
+                  file: backend/coverage.xml

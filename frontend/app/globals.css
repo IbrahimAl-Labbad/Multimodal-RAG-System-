@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: #f8f9ff;
+    --surface: #ffffff;
+    --surface2: #f1f3ff;
+    --border: #e4e8ff;
+    --text: #1a1d2e;
+    --text-muted: #6b7280;
+    --brand: #5a67f2;
+  }
+
+  .dark {
+    --bg: #0d0f1a;
+    --surface: #13162a;
+    --surface2: #1a1f38;
+    --border: #252a4a;
+    --text: #e8eaff;
+    --text-muted: #8b92b8;
+    --brand: #7589f8;
+  }
+
+  body {
+    @apply bg-[var(--bg)] text-[var(--text)] font-sans antialiased transition-colors duration-200;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 dark:bg-white/5 backdrop-blur-md border border-[var(--border)];
+  }
+  .surface {
+    @apply bg-[var(--surface)] border border-[var(--border)];
+  }
+  .surface2 {
+    @apply bg-[var(--surface2)] border border-[var(--border)];
+  }
+}
