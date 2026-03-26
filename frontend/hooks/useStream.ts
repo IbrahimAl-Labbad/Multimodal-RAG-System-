@@ -31,6 +31,32 @@ export function useStream() {
                     }),
                 })
 
+                // ── Fix 7: JWT expiry / auth failure detection ────────────────
+                if (response.status === 401 || response.status === 403) {
+                    appendToken(
+                        assistantMsgId,
+                        '\n\n🔒 **Session expired.** Please re-authenticate to continue.\n' +
+                        'Your token has expired or is invalid.'
+                    )
+                    // Clear stale token
+                    if (typeof window !== 'undefined') {
+                        localStorage.removeItem('jwt_token')
+                    }
+                    // Dispatch a custom event that the UI can listen to for re-auth prompts
+                    if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('auth:expired'))
+                    }
+                    return
+                }
+
+                if (!response.ok) {
+                    appendToken(
+                        assistantMsgId,
+                        `\n\n⚠️ Server error (${response.status}): ${response.statusText}`
+                    )
+                    return
+                }
+
                 if (!response.body) throw new Error('No stream body')
 
                 const reader = response.body.getReader()
@@ -58,6 +84,9 @@ export function useStream() {
                             } else if (parsed.type === 'cached') {
                                 appendToken(assistantMsgId, parsed.answer)
                                 setCitations(assistantMsgId, parsed.citations as Citation[])
+                            } else if (parsed.type === 'error') {
+                                // Server-side error event from the SSE stream
+                                appendToken(assistantMsgId, `\n\n⚠️ ${parsed.message}`)
                             }
                         } catch { }
                     }

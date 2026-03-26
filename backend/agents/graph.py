@@ -102,21 +102,68 @@ async def generation(state: AgentState) -> AgentState:
 
 # ── Step 6: Self-Verification ─────────────────────────────────────────────────
 
+GROUNDING_THRESHOLD = 0.3  # Minimum fraction of claim n-grams found in context
+
+
+def _extract_ngrams(text: str, n: int = 3) -> set[str]:
+    """Extract n-gram sequences from text for overlap checking."""
+    words = [w.lower().strip(".,;:!?\"'()[]") for w in text.split() if len(w) > 2]
+    return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def _compute_grounding_score(answer: str, chunk_contents: list[str]) -> float:
+    """
+    Explicit grounding: extract 3-grams from the answer, check how many
+    appear verbatim in at least one retrieved chunk's content.
+    Returns the fraction of answer n-grams found in context (0.0–1.0).
+    """
+    answer_ngrams = _extract_ngrams(answer, n=3)
+    if not answer_ngrams:
+        return 1.0  # trivially grounded (very short answer)
+
+    # Build a single searchable text from all chunk contents
+    context_text = " ".join(c.lower() for c in chunk_contents)
+
+    grounded = sum(1 for ng in answer_ngrams if ng in context_text)
+    return grounded / len(answer_ngrams)
+
+
 async def self_verify(state: AgentState) -> AgentState:
     """
-    Lightweight grounding check: verify key phrases in the answer appear in context.
-    In production this can be replaced with an NLI or LLM-as-judge call.
+    Explicit grounding verification:
+    1. Extract 3-gram phrases from the answer
+    2. Check each against the actual retrieved chunk contents (not just context string)
+    3. If grounding ratio < threshold, regenerate with a constrained prompt
     """
     answer = state.get("answer", "")
-    context = state.get("context", "")
-    # Basic check: at least 30% of answer sentences reference context content
-    sentences = [s.strip() for s in answer.split(".") if len(s.strip()) > 10]
-    grounded = sum(1 for s in sentences if any(w in context for w in s.split() if len(w) > 4))
-    state["verified"] = (grounded / max(len(sentences), 1)) >= 0.3
+    reranked = state.get("reranked_chunks", [])
+
+    # Extract raw content from each chunk for comparison
+    chunk_contents = [
+        str(c.get("payload", {}).get("content", c.get("payload", {}).get("caption", "")))
+        for c in reranked
+    ]
+
+    score = _compute_grounding_score(answer, chunk_contents)
+    state["verified"] = score >= GROUNDING_THRESHOLD
+
+    # If poorly grounded, regenerate with a tighter constraint
+    if not state["verified"] and chunk_contents:
+        constrained_answer = await generate(
+            f"Answer ONLY using information from the provided context. "
+            f"If the context does not contain the answer, say 'I cannot find this in the provided documents.'\n\n"
+            f"Question: {state['query']}",
+            state["context"],
+        )
+        # Re-check grounding on the constrained answer
+        new_score = _compute_grounding_score(constrained_answer, chunk_contents)
+        if new_score > score:
+            state["answer"] = constrained_answer
+            state["verified"] = new_score >= GROUNDING_THRESHOLD
 
     # Persist to session memory
     await append_session_memory(UUID(state["session_id"]), "user", state["query"])
-    await append_session_memory(UUID(state["session_id"]), "assistant", answer)
+    await append_session_memory(UUID(state["session_id"]), "assistant", state["answer"])
     return state
 
 

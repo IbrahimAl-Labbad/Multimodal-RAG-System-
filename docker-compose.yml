@@ -84,11 +84,16 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
+    # GPU support: both runtime AND deploy block needed for broad Docker version compatibility
+    # If no GPU: remove 'runtime: nvidia' and the 'deploy' block below
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
     deploy:
       resources:
         reservations:
           devices:
-            - capabilities: [gpu]   # Remove this block if no GPU is available
+            - capabilities: [gpu]
 
 volumes:
   qdrant_storage:

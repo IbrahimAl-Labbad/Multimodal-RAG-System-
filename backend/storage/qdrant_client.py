@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 from uuid import UUID
 
@@ -92,3 +93,19 @@ async def search_points(
         }
         for r in results
     ]
+
+
+async def get_collection_version_hash() -> str:
+    """
+    Return a lightweight fingerprint of the current collection state.
+    Changes whenever documents are upserted or deleted, invalidating
+    any cache keys that include this hash.
+    """
+    client = get_qdrant_client()
+    try:
+        info = await client.get_collection(settings.qdrant_collection)
+        # Combine point count + segment count for a cheap state fingerprint
+        fingerprint = f"{info.points_count}:{info.segments_count}"
+        return hashlib.sha256(fingerprint.encode()).hexdigest()[:12]
+    except Exception:
+        return "no-collection"
